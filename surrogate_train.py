@@ -6,7 +6,7 @@ import numpy as np
 import pathlib
 import torch
 
-from surrogate_model import create_model
+from surrogate_model import Network
 
 def get_transform(data, *, axis=1):
     # _max = np.max(data, axis=axis)
@@ -17,10 +17,6 @@ def get_transform(data, *, axis=1):
     scale = np.std(data, axis=axis)
     return shift, scale
 
-def init_weights(m):
-    if type(m) == torch.nn.Linear:
-        torch.nn.init.xavier_uniform_(m.weight)
-        m.bias.data.fill_(0.0)
 
 def train_surrogate(argv):
     parser = argparse.ArgumentParser()
@@ -41,6 +37,7 @@ def train_surrogate(argv):
     output_dims, ndata_ = outputs.shape
     assert ndata == ndata_, f"input data has {ndata} samples while output has {ndata_} samples"
 
+
     # Scale the data.
 
     in_shift, in_scale = get_transform(inputs, axis=1)
@@ -49,7 +46,7 @@ def train_surrogate(argv):
     inputs = (inputs - in_shift[:,np.newaxis]) / in_scale[:,np.newaxis]
     outputs = (outputs - out_shift[:,np.newaxis]) / out_scale[:,np.newaxis]
 
-    # Shuffle the data ans split in training / test set.
+    # Shuffle the data and split in training / test set.
 
     order = np.arange(ndata)
     np.random.shuffle(order)
@@ -66,26 +63,35 @@ def train_surrogate(argv):
     xvalid = x[ntrain:,:]
     yvalid = y[ntrain:,:]
 
-    model = create_model(input_size = input_dims,
-                         output_size = output_dims)
-    model.apply(init_weights)
+    print("Shape of xtrain={:}".format(xtrain.size()))
+    print("Shape of ytrain={:}".format(ytrain.size()))
+    print("Shape of xvalid={:}".format(xvalid.size()))
+    print("Shape of yvalid={:}".format(yvalid.size()))
+
+
+    model = Network(input_dims, output_dims, folder="./surrogate_data")
 
     # Optimize.
     best_valid_loss = 1e20
     num_worse_valid_losses = 0
     patience = 5
-    max_number_of_rounds = 10
+    max_number_of_rounds = 3
     number_of_rounds = 0
-    learning_rate = 0.1
-    lr_reduction_factor = 0.5
+    learning_rate = 1.0
+    lr_reduction_factor = 0.1
+    print_every = 1
 
     criterion = torch.nn.MSELoss()
 
+    model.save_model()
+
+    optimizer = torch.optim.Adam(model.get_parameters(), lr=learning_rate)
+
     for epoch in range(args.max_epoch):
-        optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+        optimizer.zero_grad()
         # Forward pass: Compute predicted y by passing x to the model.
-        y_pred = model(xtrain)
-        y_pred_valid = model(xvalid)
+        y_pred = model.forward(xtrain)
+        y_pred_valid = model.forward(xvalid)
 
         # Compute and print loss.
         train_loss = criterion(y_pred, ytrain)
@@ -93,12 +99,14 @@ def train_surrogate(argv):
         with torch.no_grad():
             valid_loss = criterion(y_pred_valid, yvalid)
 
-        if epoch % 100 == 0:
+        if epoch % print_every == 0:
             print(f"epoch {epoch}: training loss {train_loss.item()}, valid loss {valid_loss.item()}")
 
         if valid_loss.item() < best_valid_loss:
             best_valid_loss = valid_loss.item()
             num_worse_valid_losses = 0
+            # Saving the model with the lowest validation loss
+            model.save_model()
         else:
             num_worse_valid_losses += 1
 
@@ -106,18 +114,23 @@ def train_surrogate(argv):
             num_worse_valid_losses = 0
             number_of_rounds += 1
             learning_rate *= lr_reduction_factor
-            print(f"round {number_of_rounds}: reduced lr from {learning_rate/lr_reduction_factor} to {learning_rate}")
+            print(f"# Round {number_of_rounds}: reduced lr from {learning_rate/lr_reduction_factor} to {learning_rate}")
+            # Resetting the optimizer
+            optimizer = torch.optim.Adam(model.get_parameters(), lr=learning_rate)
+            # Load the model with the lowest validation loss
+            model.load_model()
+        else:
+            # Zero gradients, perform a backward pass, and update the weights.
+            optimizer.zero_grad()
+            train_loss.backward()
+            optimizer.step()
 
         if number_of_rounds >= max_number_of_rounds:
             break
 
-        # Zero gradients, perform a backward pass, and update the weights.
-        optimizer.zero_grad()
-        train_loss.backward()
-        optimizer.step()
 
 
-    torch.save(model.state_dict(), OUT_PATH / "model.pt")
+
     torch.save({"xtrain": xtrain,
                 "ytrain": ytrain,
                 "xvalid": xvalid,
