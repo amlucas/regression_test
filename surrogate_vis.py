@@ -3,7 +3,6 @@
 
 import argparse
 import numpy as np
-import os
 import random
 import torch
 
@@ -24,8 +23,6 @@ def main(argv):
     inputs = inout_data["inputs"]
     outputs = inout_data["outputs"]
     input_varnames = inout_data["input_varnames"]
-    output_varnames = inout_data["output_varnames"]
-    nregions = inout_data['nregions']
 
     nin, ndata = inputs.shape
 
@@ -46,8 +43,6 @@ def main(argv):
         channels = surr.get_out_channels()
 
         import matplotlib.pyplot as plt
-
-        nchannels = len(channels)
 
         fig = plt.figure()
         ax = fig.subplots()
