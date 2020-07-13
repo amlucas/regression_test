@@ -69,7 +69,7 @@ def train_surrogate(argv):
     print("Shape of yvalid={:}".format(yvalid.size()))
 
 
-    model = Network(input_dims, output_dims, folder="./surrogate_data")
+    model = Network(input_dims, output_dims, folder=OUT_PATH)
 
     # Optimize.
     best_valid_loss = 1e20
