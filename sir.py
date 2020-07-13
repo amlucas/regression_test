@@ -33,14 +33,17 @@ def main(argv):
     beta = 2 * gamma
     N = 1e6
     I0 = N * 0.01
-    t, I = sir(beta=beta, gamma=gamma, I0=I0, N=N)
+    tmax = 100
+    t, I = sir(beta=beta, gamma=gamma, I0=I0, N=N, tmax=tmax)
 
     import matplotlib.pyplot as plt
     fig = plt.figure()
     ax = fig.subplots()
-    ax.plot(t, I, '-+')
+    ax.plot(t, I / N, '-+')
     ax.set_xlabel(r"$t$")
-    ax.set_ylabel(r"$I$")
+    ax.set_ylabel(r"$I/N$")
+    ax.set_xlim(0, tmax)
+    ax.set_ylim(0)
     plt.show()
 
 
