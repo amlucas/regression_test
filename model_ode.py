@@ -32,10 +32,18 @@ class Network(nn.Module):
         self.path = pathlib.Path(folder)
         self.times = times
 
-        self.params_net = self.get_network(input_size, 5, hl_num, hl_dim)
+        self.R_net = self.get_network(input_size, 1, hl_num, hl_dim)
+        self.gamma_net = self.get_network(input_size, 1, hl_num, hl_dim)
+        self.I0_net = self.get_network(input_size, 1, hl_num, hl_dim)
+        self.kint_net = self.get_network(input_size, 1, hl_num, hl_dim)
+        self.tint_net = self.get_network(input_size, 1, hl_num, hl_dim)
 
         self.params_nets = []
-        self.params_nets.append(self.params_net)
+        self.params_nets.append(self.R_net)
+        self.params_nets.append(self.gamma_net)
+        self.params_nets.append(self.I0_net)
+        self.params_nets.append(self.kint_net)
+        self.params_nets.append(self.tint_net)
 
         self.initialize_weights()
 
@@ -68,13 +76,14 @@ class Network(nn.Module):
         # TODO: TAKE INTO ACCOUNT SCALING IN A SMART WAY
         # TODO: INNER LOOP IN EPOCHS, DATA FEED IN BATCHES (MINI-BATCHES)
 
+        R_net, gamma_net, I0_net, kint_net, tint_net = self.params_nets
+
         sp = torch.nn.Softplus()
-        params = sp(self.params_nets[0](inputs))
-        gamma = params[:,0] + 0.1
-        R = params[:,1] + 1.5
-        I0 = params[:,2]
-        kint = params[:,3]
-        tint = params[:,4] + 20
+        gamma = sp(gamma_net(inputs))[:,0] + 0.1
+        R = sp(R_net(inputs))[:,0] + 1.5
+        I0 = sp(I0_net(inputs))[:,0]
+        kint = sp(kint_net(inputs))[:,0]
+        tint = sp(tint_net(inputs))[:,0] + 20
         beta0 = R * gamma
         beta1 = beta0 * kint
 
