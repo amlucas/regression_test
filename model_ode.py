@@ -9,7 +9,7 @@ from torchdiffeq import odeint
 
 class Network(nn.Module):
     def __init__(self, input_size: int, output_size: int, *,
-                 times, hl_dim: int=20, hl_num: int=2,
+                 times, hl_dim: int=32, hl_num: int=3,
                  N=8.6e6, folder="./surrogate_data"):
         super().__init__()
 
@@ -32,14 +32,10 @@ class Network(nn.Module):
         self.path = pathlib.Path(folder)
         self.times = times
 
-        self.beta_net = self.get_network(input_size, output_size, hl_num, hl_dim)
-        self.gamma_net = self.get_network(input_size, output_size, hl_num, hl_dim)
-        self.I0_net = self.get_network(input_size, output_size, hl_num, hl_dim)
+        self.params_net = self.get_network(input_size, 5, hl_num, hl_dim)
 
         self.params_nets = []
-        self.params_nets.append(self.beta_net)
-        self.params_nets.append(self.gamma_net)
-        self.params_nets.append(self.I0_net)
+        self.params_nets.append(self.params_net)
 
         self.initialize_weights()
 
@@ -67,43 +63,59 @@ class Network(nn.Module):
                 params += layer.parameters()
         return params
 
-    def forwardSir(self, inputs, times):
-        gamma_net, beta_net, I0_net = self.params_nets
+    def forward_sir(self, inputs, times):
         # TODO: IS THEIR EFFECT SMOOTH ? IF NOT REPLACE TANH WITH RELU
         # TODO: TAKE INTO ACCOUNT SCALING IN A SMART WAY
         # TODO: INNER LOOP IN EPOCHS, DATA FEED IN BATCHES (MINI-BATCHES)
 
         sp = torch.nn.Softplus()
-        gamma = sp(gamma_net(inputs)).reshape((-1))
-        beta = sp(beta_net(inputs)).reshape((-1))
-        I0 = sp(I0_net(inputs)).reshape((-1))
+        params = sp(self.params_nets[0](inputs))
+        gamma = params[:,0] + 0.1
+        R = params[:,1] + 1.5
+        I0 = params[:,2]
+        kint = params[:,3]
+        tint = params[:,4] + 20
+        beta0 = R * gamma
+        beta1 = beta0 * kint
 
         N = torch.full_like(I0, self.N)
+
+        #print(beta[0].item(), gamma[0].item(), I0[0].item())
+
         S0 = N - I0
         R0 = torch.zeros_like(S0)
         x0 = torch.stack([S0, I0, R0], dim=1)
-        x = self.integrate(x0, times, beta, gamma, N)
-        output = x[:,:,1:2] # I
-        return output.reshape((-1,self.output_size))
+        x = self.integrate(x0, times, beta0, beta1, tint, gamma, N)
+        S = x[:,:,0]
+        dI = torch.zeros_like(S)
+        dI[1:,:] = S[:-1,:] - S[1:,:]
 
-    def integrate(self, x0, times, beta, gamma, N):
+        return dI.reshape((-1,self.output_size))
+
+    def integrate(self, x0, times, beta0, beta1, tint, gamma, N):
+        def logistic(x):
+            return 1 / (1 + torch.exp(-x))
+
+        def beta(t):
+            dt = 7/4
+            return logistic((t - tint) / dt) * (beta1 - beta0) + beta0
+
         def rhs(t, x):
             S = x[:,0]
             I = x[:,1]
             R = x[:,2]
             y = torch.zeros_like(x)
-            tmp = -beta * S * I / N
-            y[:,0] = -beta * S * I / N
-            y[:,1] =  beta * S * I / N - gamma * I
+            y[:,0] = -beta(t) * S * I / N
+            y[:,1] =  beta(t) * S * I / N - gamma * I
             y[:,2] =  gamma * I
             return y
 
-        pred_y = odeint(rhs, x0, times)
+        pred_y = odeint(rhs, x0, times, method='rk4')
         return pred_y
 
 
     def forward(self, data):
-        return self.forwardSir(data, self.times)
+        return self.forward_sir(data, self.times)
 
     def initialize_weights(self):
         print("Initializing parameters of the network...")

@@ -54,6 +54,7 @@ def main(argv):
         ax.set_xlabel("t")
         ax.set_ylabel("daily reported")
 
+        #ax.set_yscale('log')
         plt.legend()
         plt.tight_layout()
         plt.show()

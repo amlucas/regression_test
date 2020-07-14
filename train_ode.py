@@ -89,7 +89,7 @@ def train_surrogate(argv):
     patience = 5
     max_number_of_rounds = 3
     number_of_rounds = 0
-    learning_rate = 0.1
+    learning_rate = 0.01
     lr_reduction_factor = 0.1
     print_every = 1
 
