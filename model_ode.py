@@ -9,7 +9,7 @@ from torchdiffeq import odeint
 
 class Network(nn.Module):
     def __init__(self, input_size: int, output_size: int, *,
-                 times, hl_dim: int=10, hl_num: int=3,
+                 times, hl_dim: int=20, hl_num: int=2,
                  N=8.6e6, folder="./surrogate_data"):
         super().__init__()
 
@@ -32,11 +32,14 @@ class Network(nn.Module):
         self.path = pathlib.Path(folder)
         self.times = times
 
-        num_ode_params = 3 # I0, beta, gamma
+        self.beta_net = self.get_network(input_size, output_size, hl_num, hl_dim)
+        self.gamma_net = self.get_network(input_size, output_size, hl_num, hl_dim)
+        self.I0_net = self.get_network(input_size, output_size, hl_num, hl_dim)
 
         self.params_nets = []
-        for _ in range(num_ode_params):
-            self.params_nets.append(self.get_network(input_size, output_size, hl_num, hl_dim))
+        self.params_nets.append(self.beta_net)
+        self.params_nets.append(self.gamma_net)
+        self.params_nets.append(self.I0_net)
 
         self.initialize_weights()
 
@@ -143,7 +146,7 @@ class Network(nn.Module):
         return False
 
 class Surrogate:
-    def __init__(self, folder: str):
+    def __init__(self, times, folder: str):
         PATH = pathlib.Path(folder)
         data = torch.load(PATH / "data.pt")
 
@@ -155,24 +158,23 @@ class Surrogate:
 
         self.out_channels = data["output_names"]
 
-        input_size = len(data["input_names"])
-        output_size = self.nregions * len(self.out_channels)
+        input_size = len(data["input_names"]) - 1
+        output_size = self.nregions * 1
 
-        self.model = Network(input_size, output_size, folder="./surrogate_data")
-
-
+        self.model = Network(input_size, output_size, times = torch.from_numpy(times.astype(np.float32)), folder="./surrogate_data")
         self.model.load_model()
 
     def get_out_channels(self):
         return self.out_channels
 
-    # def evaluate(self, x):
-    #     x = np.array(x)
-    #     x = (x - self.in_shift[np.newaxis,:]) / self.in_scale[np.newaxis,:]
+    def evaluate(self, x):
+        x = np.array(x)
+        x = (x - self.in_shift[np.newaxis,:]) / self.in_scale[np.newaxis,:]
+        x = torch.from_numpy(x.astype(np.float32))
 
-    #     with torch.no_grad():
-    #         x = torch.Tensor(x)
-    #         y = self.model.forward(x).numpy()
+        with torch.no_grad():
+            x = torch.Tensor(x)
+            y = self.model.forward(x).numpy()
 
-    #     y = (y * self.out_scale[np.newaxis,:]) + self.out_shift[np.newaxis,:]
-    #     return y
+        #y = (y * self.out_scale[np.newaxis,:]) + self.out_shift[np.newaxis,:]
+        return y

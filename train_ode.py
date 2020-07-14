@@ -89,7 +89,7 @@ def train_surrogate(argv):
     patience = 5
     max_number_of_rounds = 3
     number_of_rounds = 0
-    learning_rate = 1.0
+    learning_rate = 0.1
     lr_reduction_factor = 0.1
     print_every = 1
 
@@ -104,6 +104,10 @@ def train_surrogate(argv):
         # Forward pass: Compute predicted y by passing x to the model.
         y_pred = model.forward(xtrain)
         y_pred_valid = model.forward(xvalid)
+
+        # Rescale the ODE output with the same scale as data output one.
+        y_pred = (y_pred - out_shift[0]) / out_scale[0]
+        y_pred_valid = (y_pred_valid - out_shift[0]) / out_scale[0]
 
         # Compute and print loss.
         train_loss = criterion(y_pred, ytrain)
